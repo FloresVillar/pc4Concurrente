@@ -80,15 +80,15 @@ public class Nodo {
             RedNeuronal red = new RedNeuronal(784, 64, 10);
             red.entrenar(datosEntrenamiento, 10);
             try {
-                ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream("modelo_nodo_" + idObjNodo + ".dat"));
-                oos.writeObject(red);
-                oos.close();
+                OBjectOutputStream paraEscribir = new ObjectOutputStream(new FileOutputStream("modelo_nodo"+idObjNodo+".dat"));
+                paraEscribir.writeObject(red);
+                paraEscribir.close();
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            nodoEnvia("ENTRENAMIENTO_COMPLETADO;NODO_ID=" + idObjNodo);
+            nodoEnvia("ENTRENAMIENTO_COMPLETADO;NODO_ID;" + idObjNodo);
         }
-
+        
         if (mensaje.startsWith("TESTEAR")) {
             try {
                 String base64 = mensaje.split(";")[1];
@@ -155,13 +155,6 @@ public class Nodo {
         }
     } */
    //----------------------------------------------------------------
-    static class Data implements Serializable {
-        double[] entrada;
-        double[] salida;
-        public Data(double[] i, double[] o) {
-            entrada = i; salida = o;
-        }
-    }
     //----------------------------------------------------------------
     static class RedNeuronal implements Serializable {
         double[][] w1, w2;
@@ -227,21 +220,22 @@ public class Nodo {
                     indx = i;
                 }
             }
-            return idx;//el indice con la prob mas alta
+            return idx;//el indice(numero) con la prob mas alta
         }
         //-----------------------------------------------------------
         void entrenar(java.util.List<Data> datos, int epocas) {
             double lr = 0.01;
             for (int ep = 0; ep < epocas; ep++) {
                 for (Data ds : datos) {
-                    double[] x = ds.entrada; //cada x[i] es un pixel de los ancho*alto pixeles
-                    double[] y = ds.salida;
+                    double[] x = datos.entrada; //cada x[i] es un pixel de los ancho*alto pixeles
+                    double[] y = datos.salida; //vector one hot
                     double[] z1 = new double[b1.length];
                     double[] a1 = new double[b1.length];
                     for (int i = 0; i < w1.length; i++) {
                         for (int j = 0; j < x.length; j++)
                             z1[i] += w1[i][j] * x[j];
-                        a1[i] = Math.max(0, z1[i] + b1[i]);
+                        z1[i]+=b1[i];
+                        a1[i] = Math.max(0, z1[i]);
                     }
                     double[] z2 = new double[b2.length];
                     double[] a2 = new double[b2.length];
@@ -255,35 +249,50 @@ public class Nodo {
                         }
                     }
                     double sum = 0;
-                    for (int i = 0; i < a2.length; i++) sum += (a2[i] = Math.exp(z2[i] - max));
-                    for (int i = 0; i < a2.length; i++) a2[i] /= sum;
-                    double[] d2 = new double[y.length];
-                    for (int i = 0; i < y.length; i++) d2[i] = a2[i] - y[i];
-                    double[][] dw2 = new double[w2.length][w2[0].length];
-                    for (int i = 0; i < w2.length; i++)
-                        for (int j = 0; j < w2[0].length; j++)
-                            dw2[i][j] = d2[i] * a1[j];
-                    double[] db2 = Arrays.copyOf(d2, d2.length);
-                    double[] d1 = new double[a1.length];
-                    for (int i = 0; i < a1.length; i++) {
-                        double sumD = 0;
-                        for (int j = 0; j < d2.length; j++)
-                            sumD += d2[j] * w2[j][i];
-                        d1[i] = z1[i] > 0 ? sumD : 0;
+                    for (int i = 0; i < a2.length; i++){
+                        sum += (a2[i] = Math.exp(z2[i] - max));
                     }
-                    double[][] dw1 = new double[w1.length][w1[0].length];
-                    for (int i = 0; i < w1.length; i++)
+                    for (int i = 0; i < a2.length; i++){
+                        a2[i] /= sum;
+                    } // BACKPROPAGATION                  // a2= softmax(z2)
+                    double[] dLz2 = new double[y.length]; // L = -suma(yi * log(a2)) cross-entropy
+                    for (int i = 0; i < y.length; i++){   // dL/z2 = suma dL/da2 * da2/z2
+                        dLz2[i] = a2[i] - y[i];           //       = suma -yi dln(a2) * da2/z2
+                    }                                     //       = suma -yi/a2 * d softmax(a2)/dz2 = a2-yi ver nota dL/dz2
+                    double[][] dLw2 = new double[w2.length][w2[0].length];  // z2 = w2*a1 + b2
+                    for (int i = 0; i < w2.length; i++)                    //  dL/dw2 = dL/z2*dz2/dw2
+                        for (int j = 0; j < w2[0].length; j++)             //         = dL/z2*a1
+                            dLw2[i][j] = dLz2[i] * a1[j];                   // dL/db2 = dL/dz2*dz2/db2
+                    double[] dLb2 = Arrays.copyOf(dLz2, dLz2.length);       //        = dl/dz2 * 1
+                    double[] dLz1 = new double[a1.length];                    //a1 = max(0,z1)
+                    for (int i = 0; i < a1.length; i++) {                   //z1 = w1*x  + b1 
+                        double sumD = 0;
+                        for (int j = 0; j < dLz2.length; j++)                 // dL/da1 = dL/z2 * dz2/a1
+                            sumD += dLz2[j] * w2[j][i];                       //        = dL/z2 * w2
+                        dLz1[i] = z1[i] > 0 ? sumD : 0;                       // dL/z1 = dL/a1 * da1/dz1
+                    }                                                         //       = dL/dz2 *w2 * {1,0}
+                    double[][] dw1 = new double[w1.length][w1[0].length];    //dL/dw1 = dL/z1 * dz1/dw1 
+                    for (int i = 0; i < w1.length; i++)                      //       =  dL/z1 * x
                         for (int j = 0; j < x.length; j++)
-                            dw1[i][j] = d1[i] * x[j];
-                    double[] db1 = Arrays.copyOf(d1, d1.length);
-                    for (int i = 0; i < w2.length; i++)
-                        for (int j = 0; j < w2[0].length; j++)
-                            w2[i][j] -= lr * dw2[i][j];
-                    for (int i = 0; i < b2.length; i++) b2[i] -= lr * db2[i];
-                    for (int i = 0; i < w1.length; i++)
-                        for (int j = 0; j < w1[0].length; j++)
-                            w1[i][j] -= lr * dw1[i][j];
-                    for (int i = 0; i < b1.length; i++) b1[i] -= lr * db1[i];
+                            dLw1[i][j] = dLz1[i] * x[j];
+                    double[] dLb1 = Arrays.copyOf(dLz1, dLz1.length);         //dL/db1 = dL/z1 * dz1/db1
+                    //DESCENSO DE GRADIENTE                                  //       =dL/dz2 * w2 * {1,0} * 1                        
+                    for (int i = 0; i < w2.length; i++){                       
+                        for (int j = 0; j < w2[0].length; j++){
+                            w2[i][j] -= lr * dLw2[i][j];
+                        }
+                    }
+                    for (int i = 0; i < b2.length; i++){
+                        b2[i] -= lr * dLb2[i];
+                    }
+                    for (int i = 0; i < w1.length; i++){
+                        for (int j = 0; j < w1[0].length; j++){
+                            w1[i][j] -= lr * dLw1[i][j];
+                        }
+                    }
+                    for (int i = 0; i < b1.length; i++){
+                        b1[i] -= lr * dLb1[i];
+                    }
                 }
             }
         }
@@ -300,4 +309,29 @@ public class Nodo {
  * ej : si z2 = [2.0 , 1.0 , 0.1]
  * calcular las exp: e^2-2  e^1-2 e^0.1-2 suma
  * softmax(2) = e^2-2/suma *100% asi los demas    
+ * dl/dz2
+ * ai = e^zi / suma e^zi   S= suma e^zi
+ * derivando : d/dzk (e^zi /S) 
+ * d e^zi /d zk = delta e^zi   delta = 1 i=k , delta =0 i!=k 
+ * d S/dzk = e^zk
+ * d ai/d zk  = (delta * e^zi * S - e^zi * e^zk )/S^2
+ * d ai/d zk  = e^zi/ S * (delta -  e^zk/ S )
+ *  e^zi/ S =ai (softmax zi)
+ *  e^zk/ S = ak (softmax zk)
+ * dai/d zk = ai*(deltaik - ak)
+ * O Jik = d ai/ d zk  = { ai(1-ai) i=k; -aiak i!=K} 
+ * j = [ a1(1-a1)  -a1a2......-a1ak
+ *       -a1a2      a2(1-a2)...-a2ak
+ * 
+ *         .....................ak(1-ak)]
+ * 
+ * dL /dzk = suma d L/ dai * dai / dzk = suma -yi/ai * ai(deltaik - ak)
+ *          = suma -yi (deltaik -ak)
+ *          = -yk(1 - ak) + suma (-yi)(-ak)
+ *              i=k          i!=k
+ *          suma yi = 1  → suma yi i!=k = 1 -yk
+ *           = -yk(1 - ak) +-(1-yk)(-ak)
+ *           = -yk +ykak +ak -akyk
+ *             =ak -yk
+ * 
  */

@@ -67,10 +67,10 @@ public class Servidor {
         //pantallaServidor.agregarMensajeNodo("Nodo >> " + mensaje);
         if (mensaje.startsWith("ENTRENAMIENTO_COMPLETADO;")) {
             try {
-                int id = Integer.parseInt(mensaje.split(";")[1].trim());
+                int id = Integer.parseInt(mensaje.split(";")[2].trim());
                 entrenados.add(id);
             } catch (Exception e) {
-                System.out.println("Error al procesar ENTRENAMIENTO_COMPLETADO");
+                System.out.println("Error al procesar ENTRENAMIENTO");
             }
         }
     }
