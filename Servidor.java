@@ -54,9 +54,12 @@ public class Servidor {
         if (mensaje.startsWith("ENTRENAR;")) {
             repartirImagenesNodos(mensaje);
         }
-        if (mensaje.startsWith("TESTEAR;")) {
-        //"TESTEAR;" + base64 + ";" + idObjetoCliente;
-            tcpServer.enviarMensajeNodo(mensaje); 
+        if (mensaje.startsWith("TESTEAR;")) { 
+            int n = entrenados.size();
+            int i = (int)(Math.random()*n);
+            System.out.println("se testetara en el nodo: " + i);
+            TCPThreadNodo nodo = tcpServer.obtenerNodo(i);
+            nodo.enviarMensajeANodo(mensaje);
         }//"PREDICCION;CLASE=" + clase + ";NODO=" + idObjNodo
         if(mensaje.startsWith("PREDICCION;")){
             servidorEnvia(mensaje);
@@ -69,9 +72,29 @@ public class Servidor {
             try {
                 int id = Integer.parseInt(mensaje.split(";")[2].trim());
                 entrenados.add(id);
+                mensaje = "ENTRENADOS;";
+                for (Integer e:entrenados){
+                    mensaje = mensaje  + e + "-" ;
+                }
+                System.out.println("ENTRENAMIENTO_COMPLETADO NODOS: " + mensaje);
+                servidorEnvia(mensaje);
             } catch (Exception e) {
                 System.out.println("Error al procesar ENTRENAMIENTO");
             }
+           
+        }
+        if (mensaje.startsWith("TESTEO_COMPLETADO;")) { //"TESTEO_COMPLETADO;NODO_ID;"+idObjNodo +";"+ predicho + ";" + etiqueta
+            try {
+                int predicho = Integer.parseInt(mensaje.split(";")[3].trim());
+                int etiqueta = Integer.parseInt(mensaje.split(";")[4].trim());
+                String msj = "PREDICCION;";
+                System.out.println("TESTEO_COMPLETADO NODOS; " + mensaje);
+                msj = msj + predicho +"ETIQUETA;" + etiqueta;
+                servidorEnvia(msj);
+            } catch (Exception e) {
+                System.out.println("Error al procesar TESTEO");
+            }
+           
         }
     }
 

@@ -72,15 +72,17 @@ public class Cliente {
             if(mensaje.split(";")[0].equals("ESTE ES TU ID")){
                 idObjetoCliente = Integer.parseInt(mensaje.split(";")[1].trim());
             }//msj = "SALDO_CONSULTADO;"+ID_CUENTA+SALDO;
-            
-            if(mensaje.split(";")[0].equals("SALDO_CONSULTADO")){
-                String id = mensaje.split(";")[1].trim();
-                int idd=Integer.parseInt(id);
-                String saldoConsultado = mensaje.split(";")[2].trim();
-                double saldo =Double.parseDouble(saldoConsultado);
-                System.out.println("ID_CUENTA: "+idd+" SALDO: " +saldo);
+            if(mensaje.split(";")[0].equals("ENTRENADOS")){
+                clienteEscuchadorPantalla(mensaje);
+                String idEntrenados = mensaje.split(";")[1].trim();
+                String [] ids = idEntrenados.split("-");
+                int[] entrenados = new int[ids.length];
+                for (int i=0;i<entrenados.length;i++){
+                    entrenados[i] = Integer.parseInt(ids[i].trim());
+                }
+                // escoger uno de los ids - nodos
             }
-            if(mensaje.startsWith("PREDICCION")){
+            if(mensaje.startsWith("PREDICCION")){  //PREDICCION;pedicho;ETIQUETA;etiqueta
                 clienteEscuchadorPantalla(mensaje);
             }
         }
@@ -102,52 +104,43 @@ public class Cliente {
         System.out.println(m);
     }
     //-------------------------------------------------------------------
-    public String lecturaImagenes() {
-    String mensajeImagenes = "";
-    File carpeta = new File("pc4concurrente");
-    if (carpeta==null){
-        System.out.println("no carpeta"); 
-    }
-    File[] archivos = carpeta.listFiles(new FilenameFilter(){
-        @Override
-        public boolean accept(File dir, String name){
-            return name.toLowerCase().endsWith(".png");
+    public String lecturaImagenes(String rutaCarpeta) {
+        String mensajeImagenes = "";
+        File carpeta = new File(rutaCarpeta);
+        if (carpeta==null){
+            System.out.println("no carpeta"); 
         }
-    }); 
-    if (archivos == null) {
-        System.out.println("No se encontraron imágenes en la carpeta.");
-        return mensajeImagenes;
-    }
-    int N = archivos.length;
-    for (int j =0;j<N;j++) {
-        try {
+        File[] archivos = carpeta.listFiles(new FilenameFilter(){
+            @Override
+            public boolean accept(File dir, String name){
+                return name.toLowerCase().endsWith(".png");
+            }
+        }); 
+        if (archivos == null) {
+            System.out.println("No se encontraron imágenes en la carpeta.");
+            return mensajeImagenes;
+        }
+        int N = archivos.length;
+        for (int j =0;j<N;j++) {
+            try {
             // Extraer la etiqueta (dígito) desde el nombre del archivo, ej: "5_1.png"
-            String archivo = archivos[j].getName(); 
+                String archivo = archivos[j].getName(); 
             //String[]partes = archivo.split("\\\\");
-            int label = Integer.parseInt(archivo.split("_")[0].trim()); // toma el número antes del "_"
-            //System.out.println(archivo+";"+label);
-            /*//para mostrar cada imagen
-            JFrame frame = new JFrame("");
-            frame.setSize(500,500);
-            JLabel etiqueta = new JLabel();
-            frame.add(etiqueta);
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            frame.setVisible(true);
-            mostrarImagen(frame,etiqueta,file);*/
-            BufferedImage imagen = ImageIO.read(archivos[j]);
-            int ancho = imagen.getWidth();
-            int alto = imagen.getHeight();
-            String[] entrada = new String[ancho * alto];
-            for (int y = 0; y < alto; y++) {
-                for (int x = 0; x < ancho; x++) {
-                    int columna = x;
-                    int fila = y;
-                    int pixel = imagen.getRGB(columna, fila);
-                    int alpha = (pixel >> 24) & 0xFF; 
-                    int rojo = (pixel >> 16 ) & 0xFF;
-                    int verde = (pixel >> 8) & 0xFF;
-                    int azul = pixel & 0xFF;
-                    entrada[y * ancho + x] = Integer.toString(alpha)+"-"+Integer.toString(rojo)+"-"+Integer.toString(verde)+"-"+Integer.toString(azul);
+                int label = Integer.parseInt(archivo.split("_")[0].trim()); // toma el número antes del "_"
+                BufferedImage imagen = ImageIO.read(archivos[j]);
+                int ancho = imagen.getWidth();
+                int alto = imagen.getHeight();
+                String[] entrada = new String[ancho * alto];
+                for (int y = 0; y < alto; y++) {
+                    for (int x = 0; x < ancho; x++) {
+                        int columna = x;
+                        int fila = y;
+                        int pixel = imagen.getRGB(columna, fila);
+                        int alpha = (pixel >> 24) & 0xFF; 
+                        int rojo = (pixel >> 16 ) & 0xFF;
+                        int verde = (pixel >> 8) & 0xFF;
+                        int azul = pixel & 0xFF;
+                        entrada[y * ancho + x] = Integer.toString(alpha)+"-"+Integer.toString(rojo)+"-"+Integer.toString(verde)+"-"+Integer.toString(azul);
                 }
             }
             String mensaje = "";
@@ -212,7 +205,7 @@ static class DataSetSimple implements Serializable {
             panelentrada.add(entrada,BorderLayout.CENTER);
             ponerBoton(panelbotones, "ENTRENAR", new ActionListener() {
                 public void actionPerformed(ActionEvent evento) {
-                    String mensj = lecturaImagenes();//siguiendo la logica de los mensjaes "CONSULTAR_SALDO | ID_CUENTA | SALDO"
+                    String mensj = lecturaImagenes("datos/entrenamiento");//siguiendo la logica de los mensjaes "CONSULTAR_SALDO | ID_CUENTA | SALDO"
                     if (!mensj.isEmpty()) { 
                         mensj ="ENTRENAR;" +mensj + ";"+idObjetoCliente; 
                         imprimir(mensj);
@@ -222,48 +215,16 @@ static class DataSetSimple implements Serializable {
                 }
             });
             ponerBoton(panelbotones, "TESTEAR", new ActionListener() {
-    public void actionPerformed(ActionEvent evento) {
-        try {
-            // Elegir un número aleatorio entre 0 y 9
-            int digito = new Random().nextInt(10);
-            File imagen = new File("imagenes/test/" + digito + ".png");
-            pantallaCliente.agregarMensaje("TESTEAR "+digito+ " ");
-            // Cargar y redimensionar imagen a 28x28
-            BufferedImage img = ImageIO.read(imagen);
-            BufferedImage resized = new BufferedImage(28, 28, BufferedImage.TYPE_BYTE_GRAY);
-            Graphics2D g = resized.createGraphics();
-            g.drawImage(img, 0, 0, 28, 28, null);
-            g.dispose();
-
-            // Convertir la imagen en vector normalizado
-            double[] input = new double[784];
-            for (int y = 0; y < 28; y++) {
-                for (int x = 0; x < 28; x++) {
-                    int color = resized.getRGB(x, y) & 0xFF;
-                    input[y * 28 + x] = color / 255.0;
+            public void actionPerformed(ActionEvent evento) {
+                String mensj = lecturaImagenes("datos/test");//siguiendo la logica de los mensjaes "CONSULTAR_SALDO | ID_CUENTA | SALDO"
+                    if (!mensj.isEmpty()) { 
+                        mensj ="TESTEAR;" +mensj + ";"+idObjetoCliente; 
+                        imprimir(mensj);
+                        clienteEnvia(mensj);
+                        // entrada.setText("");
+                    }
                 }
-            }
-
-            // Crear objeto DataSetSimple sin etiqueta (output en ceros)
-            double[] output = new double[10]; // vacía, no se usa en testeo
-            DataSetSimple ds = new DataSetSimple(input, output);
-
-            // Serializar a base64
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            ObjectOutputStream oos = new ObjectOutputStream(baos);
-            oos.writeObject(ds);
-            oos.close();
-            String base64 = Base64.getEncoder().encodeToString(baos.toByteArray());
-
-            // Armar mensaje y enviar
-            String mensj = "TESTEAR;" + base64 + ";" + idObjetoCliente;
-            clienteEnvia(mensj);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-});
-
+            });
             panelentrada.add(panelbotones,BorderLayout.EAST);
             add(panelentrada, BorderLayout.SOUTH);
             setVisible(true);

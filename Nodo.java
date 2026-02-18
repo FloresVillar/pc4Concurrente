@@ -5,12 +5,13 @@ import java.awt.event.*;
 import java.io.*;
 import java.util.Base64;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 public class Nodo {
     TCPNodo tcpnodo;
     //Pantalla pantallaNodo;
     int idObjNodo; 
     ArrayList<Data> datosEntrenamiento = new ArrayList<>();
-
+    ArrayList<Data> datosTesteo = new ArrayList<>();
     public Nodo() {
         //pantallaNodo = new Pantalla();
     }
@@ -31,18 +32,9 @@ public class Nodo {
             tcpnodo.run();
         }).start();
     }
-
-    public void nodoEscuchador(String mensaje) { 
-        //pantallaNodo.agregarMensaje(mensaje);
-        if (mensaje.startsWith("ESTE ES TU ID")) {
-            idObjNodo = Integer.parseInt(mensaje.split(";")[1].trim());
-            System.out.println("ID: "+idObjNodo);
-            return;
-        }
-        if (mensaje.startsWith("ENTRENAR")) {
-            System.out.println("ENTRENAR: ");
-            //String[] partes = mensaje.split(";|");
-            byte[] bytes = Base64.getDecoder().decode(mensaje.split(";")[1].trim());
+    //----------------------------------------------
+    public void desempaquetarImagenesTrain(String mensaje){
+        byte[] bytes = Base64.getDecoder().decode(mensaje.split(";")[1].trim());
             if(bytes==null){
                 System.out.println("bytes == null");
             }
@@ -63,7 +55,7 @@ public class Nodo {
                         int rojo = Integer.parseInt(rgba[1].trim());
                         int verde = Integer.parseInt(rgba[2].trim());
                         int azul = Integer.parseInt(rgba[3].trim());
-                        entrada[i] = (0.299*rojo+0.587*verde+0.144*azul)/255.0;
+                        entrada[i] = (0.299*rojo+0.587*verde+0.114*azul)/255.0;
                     }
                     double [] salida =new double[10];
                     for(int i = 0;i<salida.length;i++){
@@ -72,43 +64,114 @@ public class Nodo {
                         }
                     }
                     Data data = new Data(entrada,salida);
-                    datosEntrenamiento.add(data); 
-                //redNeuronal(entrada ,salida)
+                    datosEntrenamiento.add(data);
+                    }
                 }
-            } 
+    }
+    //------------------------------------------
+    public void desempaquetarImagenesTesteo(String mensaje){                     // {base64}
+        datosTesteo.clear();                    //"ENTRENAR;{numero;ancho;alto;mensaje|numero;...|numero;ancho;alto;mensaje|... };idObjetoCliente"
+        byte[] bytes = Base64.getDecoder().decode(mensaje.split(";")[1].trim());
+            if(bytes==null){
+                System.out.println("bytes == null");
+            }
+            else{
+                String numeros = new String(bytes,StandardCharsets.UTF_8);
+                String[] partes = numeros.split("\\|");
+                for(String numero:partes){
+                    String []componentes = numero.split(";");
+                    int etiqueta = Integer.parseInt(componentes[0].trim());
+                    int ancho = Integer.parseInt(componentes[1].trim());
+                    int largo = Integer.parseInt(componentes[2].trim());
+                    System.out.println("numero:"+etiqueta+" ancho:"+ancho+" largo:"+largo);
+                    String [] pixeles = componentes[3].split(",");
+                    double [] entrada= new double[ancho*largo];
+                    for(int i=0;i<pixeles.length;i++){
+                        String[] rgba = pixeles[i].split("-");
+                        int alpha = Integer.parseInt(rgba[0].trim()); 
+                        int rojo = Integer.parseInt(rgba[1].trim());
+                        int verde = Integer.parseInt(rgba[2].trim());
+                        int azul = Integer.parseInt(rgba[3].trim());
+                        entrada[i] = (0.299*rojo+0.587*verde+0.114*azul)/255.0;
+                    }
+                    double [] salida =new double[10];
+                    for(int i = 0;i<salida.length;i++){
+                        if(i==etiqueta){
+                            salida[etiqueta] = 1.0;
+                        }
+                    }
+                    Data data = new Data(entrada,salida); 
+                    datosTesteo.add(data);
+                    }
+                }
+    }
+    //---------------------------------------------
+    public void nodoEscuchador(String mensaje) { 
+        //pantallaNodo.agregarMensaje(mensaje);
+        if (mensaje.startsWith("ESTE ES TU ID")) {
+            idObjNodo = Integer.parseInt(mensaje.split(";")[1].trim());
+            System.out.println("ID: "+idObjNodo);
+            return;
+        }
+        if (mensaje.startsWith("ENTRENAR")) {
+            System.out.println("ENTRENAR: ");
+            //String[] partes = mensaje.split(";|");
+                    desempaquetarImagenesTrain(mensaje); 
+                //redNeuronal(entrada ,salida)
             //creamos el modelo..
-            RedNeuronal red = new RedNeuronal(784, 64, 10);
-            red.entrenar(datosEntrenamiento, 10);
+            RedNeuronal red = new RedNeuronal(784, 16, 10);
+            red.entrenar(datosEntrenamiento, 300);
+            accuracyEntrenamiento(red);
+            datosEntrenamiento.clear();
             try {
-                OBjectOutputStream paraEscribir = new ObjectOutputStream(new FileOutputStream("modelo_nodo"+idObjNodo+".dat"));
+                ObjectOutputStream paraEscribir = new ObjectOutputStream(new FileOutputStream("modelo_nodo"+idObjNodo+".dat"));
                 paraEscribir.writeObject(red);
                 paraEscribir.close();
             } catch (Exception e) {
                 e.printStackTrace();
             }
             nodoEnvia("ENTRENAMIENTO_COMPLETADO;NODO_ID;" + idObjNodo);
-        }
         
+        }
         if (mensaje.startsWith("TESTEAR")) {
-            try {
-                String base64 = mensaje.split(";")[1];
-                byte[] datos = Base64.getDecoder().decode(base64);
-                ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(datos));
-                Data ds = (Data) ois.readObject();
-
-                ObjectInputStream modeloStream = new ObjectInputStream(new FileInputStream("modelo_nodo_" + idObjNodo + ".dat"));
-                RedNeuronal red = (RedNeuronal) modeloStream.readObject();
-                modeloStream.close();
-
-                int clase = red.predecir(ds.entrada);
-                nodoEnvia("PREDICCION;CLASE=" + clase + ";NODO=" + idObjNodo);
-            } catch (Exception e) {
+            desempaquetarImagenesTesteo(mensaje);
+            Data data = datosTesteo.get(0);
+            try{
+                ObjectInputStream modelo = new ObjectInputStream(new FileInputStream("modelo_nodo"+idObjNodo+".dat"));
+                RedNeuronal red = (RedNeuronal)modelo.readObject();
+                modelo.close();
+                int predicho = red.predecir(data.entrada);
+                int etiqueta = -1;
+                for (int i=0; i<data.salida.length;i++){
+                    if (data.salida[i] != 0){
+                        etiqueta = i;
+                        break;
+                    }
+                }
+                nodoEnvia("TESTEO_COMPLETADO;NODO_ID;"+idObjNodo +";"+ predicho + ";" + etiqueta);
+            }catch(Exception e){
                 e.printStackTrace();
-                nodoEnvia("ERROR;AL_TESTEAR;NODO=" + idObjNodo);
             }
         }
+    
     }
-
+    public void accuracyEntrenamiento(RedNeuronal red){
+        int correctos = 0;
+        for (Data d:datosEntrenamiento){
+            int predicho = red.predecir(d.entrada);
+            int real = -1;
+                for (int i=0; i<d.salida.length;i++){
+                    if (d.salida[i] != 0){
+                        real = i;
+                        break;
+                    }
+                }
+            System.out.println("Prediccion: " + predicho + "  Real: " + real);
+            if (predicho == real) correctos++;
+        }
+        double acc = (double) correctos/datosEntrenamiento.size();
+        System.out.println("Accuracy de entrenamiento: "+ acc);
+    }
     /*
     public void nodoEscuchadorPantalla(String mensaje) {
         pantallaNodo.agregarMensaje(mensaje);
@@ -154,8 +217,16 @@ public class Nodo {
             boton.addActionListener(escuchador);
         }
     } */
+    public class Data{
+        double [] entrada;
+        double [] salida; // one-hot
+        Data(double[]in , double[]out){
+            entrada = in; 
+            salida = out;
+        }
+   }
    //----------------------------------------------------------------
-    //----------------------------------------------------------------
+    //--------------CLASE RED NEURONAL--------------------------------------------------
     static class RedNeuronal implements Serializable {
         double[][] w1, w2;
         double[] b1, b2;
@@ -169,29 +240,29 @@ public class Nodo {
             //inicializar(w1);
             for(int i=0;i<w1.length;i++){
                 for(int j=0;j<w1[0].length;j++){
-                    w1[i][j] = rnd.nextGaussian()*0.01;
+                    w1[i][j] = rnd.nextGaussian()*Math.sqrt(2.0/pixeles);
                 }
             }
             //inicializar(w2);
             for(int i=0;i<w2.length;i++){
                 for(int j=0;j<w2[0].length;j++){
-                    w2[][]=rnd.nextGaussian()*0.01;
+                    w2[i][j]=rnd.nextGaussian()*Math.sqrt(2.0/neuronasOcultas);
                 }
             }  
         }
         //---------------------------------------- 
         double[] propagacionAdelante(double[] x) { //capa oculta
             double[]z1 = new double[b1.length];
-            for(int i=0;i<w1.length;){
+            for(int i=0;i<w1.length;i++){
                 for(int j=0;j<x.length;j++){
                     z1[i]+=(w1[i][j]*x[j]);
                 }
-                z1[i]=Math.max(0,z1[i]+b[i]);//relu
+                z1[i]=Math.max(0,z1[i]+b1[i]);//relu
             } 
             double []z2 = new double[b2.length];
             for(int i=0;i<w2.length;i++){ //capa salida
                 for(int j=0;j<z1.length;j++){
-                    z2[]+=(w2[i][j]*z1[j])
+                    z2[i]+=(w2[i][j]*z1[j]);
                 }
                 z2[i]+=b2[i];
             }
@@ -200,14 +271,14 @@ public class Nodo {
         //----------------------------------------------------------
         double[] softmax(double[] z) {
             double max = java.util.Arrays.stream(z).max().getAsDouble();
-            double sum = 0;
+            double suma = 0;
             double[] res = new double[z.length];
             for (int i = 0; i < z.length; i++){
                 res[i] = Math.exp(z[i] - max);
-                suma + = res[i];
+                suma += res[i];
             }
             for (int i = 0; i < res.length; i++) {
-                res[i] /= sum;
+                res[i] /= suma;
             }
             return res;
         }
@@ -220,15 +291,18 @@ public class Nodo {
                     indx = i;
                 }
             }
-            return idx;//el indice(numero) con la prob mas alta
+            return indx;//el indice(numero) con la prob mas alta
         }
+        //------------------------------------------
+        
         //-----------------------------------------------------------
         void entrenar(java.util.List<Data> datos, int epocas) {
-            double lr = 0.01;
+            double lr = 0.001;
             for (int ep = 0; ep < epocas; ep++) {
+                Collections.shuffle(datos,rnd);
                 for (Data ds : datos) {
-                    double[] x = datos.entrada; //cada x[i] es un pixel de los ancho*alto pixeles
-                    double[] y = datos.salida; //vector one hot
+                    double[] x = ds.entrada; //cada x[i] es un pixel de los ancho*alto pixeles
+                    double[] y = ds.salida; //vector one hot
                     double[] z1 = new double[b1.length];
                     double[] a1 = new double[b1.length];
                     for (int i = 0; i < w1.length; i++) {
@@ -271,7 +345,7 @@ public class Nodo {
                             sumD += dLz2[j] * w2[j][i];                       //        = dL/z2 * w2
                         dLz1[i] = z1[i] > 0 ? sumD : 0;                       // dL/z1 = dL/a1 * da1/dz1
                     }                                                         //       = dL/dz2 *w2 * {1,0}
-                    double[][] dw1 = new double[w1.length][w1[0].length];    //dL/dw1 = dL/z1 * dz1/dw1 
+                    double[][] dLw1 = new double[w1.length][w1[0].length];    //dL/dw1 = dL/z1 * dz1/dw1 
                     for (int i = 0; i < w1.length; i++)                      //       =  dL/z1 * x
                         for (int j = 0; j < x.length; j++)
                             dLw1[i][j] = dLz1[i] * x[j];
